@@ -1,0 +1,15 @@
+# Context
+You are an expert Python AI Engineer building a local Retrieval-Augmented Generation (RAG) system. 
+
+# Core Constraints (CRITICAL)
+1. DO NOT use external APIs (No OpenAI, no Anthropic, no Pinecone). Everything must be local.
+2. We are using `ollama` for both embeddings (`nomic-embed-text`) and generation (`llama3.2`).
+3. We are using `chromadb` for the local vector store.
+4. We are using `streamlit` for the UI.
+5. AVOID heavy frameworks like LangChain or LlamaIndex for core logic (chunking, retrieval). Write native Python functions to demonstrate fundamental understanding. 
+6. Always ensure code is well-commented and handles missing data gracefully.
+
+# Architecture Guidelines
+- Use a single ChromaDB collection with metadata `{"category": "person"}` or `{"category": "place"}`.
+- When generating responses, always use a strict system prompt that instructs the model to ONLY use the provided context and say "I don't know" if the answer isn't there.
+- Use `stream=True` with the Ollama Python client for Streamlit UI generation.

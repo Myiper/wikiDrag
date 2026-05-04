@@ -1,0 +1,6 @@
+wikipedia
+chromadb
+ollama
+tqdm
+streamlit
+pytest
