@@ -3,7 +3,7 @@
 Local Wikipedia **RAG** chatbot using **ChromaDB** + **Ollama** + **Streamlit**.
 
 This project:
-- Downloads Wikipedia summaries for a fixed list of famous **people** and **places**
+- Downloads Wikipedia summaries for a list of **people** and **places** from `entities.json`
 - Splits them into overlapping chunks
 - Embeds them with Ollama (`nomic-embed-text`)
 - Stores them in a persistent ChromaDB collection (`wiki_rag`)
@@ -63,11 +63,22 @@ ollama run llama3.2 "Say hello"
 
 This creates a local persistent ChromaDB folder `chroma_db/` and a collection named **`wiki_rag`**.
 
+By default, `ingest.py` reads entities from `entities.json`.
+
 Run ingestion:
 
 ```bash
 python ingest.py
 ```
+
+To use a different entities file:
+
+```bash
+python ingest.py --entities path/to/entities.json
+```
+
+The `entities.json` format is:
+- `{"people": [...], "places": [...]}`
 
 ### About missing entities (important)
 

@@ -21,52 +21,6 @@ from ollama import Client as OllamaClient
 from tqdm import tqdm
 from wikipedia.exceptions import WikipediaException
 
-PEOPLE = [
-    "Albert Einstein",
-    "Marie Curie",
-    "Leonardo da Vinci",
-    "William Shakespeare",
-    "Nelson Mandela",
-    "Martin Luther King Jr.",
-    "Winston Churchill",
-    "Cleopatra",
-    "Queen Elizabeth II",
-    "Muhammad Ali",
-    "Ludwig van Beethoven",
-    "Vincent van Gogh",
-    "Charles Darwin",
-    "Isaac Newton",
-    "Napoleon Bonaparte",
-    "Abraham Lincoln",
-    "Mahatma Gandhi",
-    "Steve Jobs",
-    "Marilyn Monroe",
-    "Michael Jackson",
-]
-
-PLACES = [
-    "Eiffel Tower",
-    "Great Wall of China",
-    "Taj Mahal",
-    "Statue of Liberty",
-    "Sydney Opera House",
-    "Colosseum",
-    "Machu Picchu",
-    "Grand Canyon",
-    "Mount Everest",
-    "Niagara Falls",
-    "Stonehenge",
-    "Pyramids of Giza",
-    "Golden Gate Bridge",
-    "Big Ben",
-    "Christ the Redeemer",
-    "Petra",
-    "Angkor Wat",
-    "Acropolis of Athens",
-    "Burj Khalifa",
-    "Empire State Building",
-]
-
 
 def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
     """
@@ -145,8 +99,57 @@ def fetch_summary_with_retries(
 EntityType = Literal["person", "place"]
 
 
-def get_wiki_entities() -> list[tuple[str, EntityType]]:
-    return [(name, "person") for name in PEOPLE] + [(name, "place") for name in PLACES]
+def load_entities_from_json(path: Path) -> list[tuple[str, EntityType]]:
+    """
+    Load entities from a JSON file.
+
+    Supported formats:
+    1) {"people": [...], "places": [...]}  (recommended)
+    2) [{"entity": "...", "entity_type": "person"|"place"}, ...]
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+
+    out: list[tuple[str, EntityType]] = []
+
+    if isinstance(data, dict):
+        people = data.get("people", [])
+        places = data.get("places", [])
+        if isinstance(people, list):
+            for p in people:
+                if isinstance(p, str) and p.strip():
+                    out.append((p.strip(), "person"))
+        if isinstance(places, list):
+            for p in places:
+                if isinstance(p, str) and p.strip():
+                    out.append((p.strip(), "place"))
+    elif isinstance(data, list):
+        for row in data:
+            if not isinstance(row, dict):
+                continue
+            ent = row.get("entity")
+            typ = row.get("entity_type")
+            if isinstance(ent, str) and ent.strip() and typ in ("person", "place"):
+                out.append((ent.strip(), typ))
+
+    # de-duplicate while preserving order
+    seen: set[tuple[str, str]] = set()
+    deduped: list[tuple[str, EntityType]] = []
+    for ent, typ in out:
+        key = (ent.casefold(), typ)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append((ent, typ))
+
+    if not deduped:
+        raise ValueError(
+            f"No entities found in {path.name}. Expected keys people/places or a list of objects."
+        )
+    return deduped
+
+
+def get_wiki_entities(entities_path: Path) -> list[tuple[str, EntityType]]:
+    return load_entities_from_json(entities_path)
 
 
 def _missing_file_path() -> Path:
@@ -187,8 +190,8 @@ def save_missing_entities(rows: list[dict[str, Any]]) -> None:
     )
 
 
-def select_entities_to_process(*, process_all: bool) -> list[tuple[str, EntityType]]:
-    all_entities = get_wiki_entities()
+def select_entities_to_process(*, process_all: bool, entities_path: Path) -> list[tuple[str, EntityType]]:
+    all_entities = get_wiki_entities(entities_path)
     if process_all:
         return all_entities
 
@@ -229,11 +232,21 @@ def embed_text(ollama: OllamaClient, text: str, model: str = "nomic-embed-text")
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--entities",
+        default="entities.json",
+        help="Path to JSON file containing people/places to ingest (default: entities.json).",
+    )
+    parser.add_argument(
         "--all",
         action="store_true",
         help="Process all entities (ignore missing_entities.json).",
     )
     args = parser.parse_args()
+    entities_path = Path(args.entities)
+    if not entities_path.is_absolute():
+        entities_path = Path(__file__).with_name(args.entities)
+    if not entities_path.exists():
+        raise FileNotFoundError(f"Entities file not found: {entities_path}")
 
     wikipedia.set_lang("en")
     # The bundled client defaults to http://; HTTPS and a descriptive User-Agent
@@ -252,7 +265,7 @@ def main() -> None:
     ingested_entities: set[str] = set()
     skipped_entities: list[tuple[str, str, str]] = []
 
-    to_process = select_entities_to_process(process_all=bool(args.all))
+    to_process = select_entities_to_process(process_all=bool(args.all), entities_path=entities_path)
 
     for entity_name, entity_type in tqdm(to_process, desc="Fetching Wikipedia", unit="entity"):
         try:
